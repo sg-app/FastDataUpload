@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: fastdataupload-backend:latest
+    container_name: fastdataupload-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3001}
+      TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES:-10}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      MAX_FILES_PER_REQUEST: ${MAX_FILES_PER_REQUEST:-20}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+    volumes:
+      # Persistent volume mount for uploaded files
+      - ./uploads:/app/uploads
+    expose:
+      - "${PORT:-3001}"
+    networks:
+      - fastdataupload
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time variables baked into the static bundle
+        VITE_APP_URL: ${VITE_APP_URL:-}
+        VITE_APP_NAME: ${VITE_APP_NAME:-FastDataUpload}
+    image: fastdataupload-web:latest
+    container_name: fastdataupload-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    networks:
+      - fastdataupload
+
+networks:
+  fastdataupload:
+    driver: bridge

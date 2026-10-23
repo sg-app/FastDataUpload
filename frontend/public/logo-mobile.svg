@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="FastDataUpload">
+  <defs>
+    <linearGradient id="fdu-mobile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(68,28)">
+    <rect x="0" y="0" width="64" height="64" rx="17" fill="url(#fdu-mobile)"/>
+    <g stroke="#ffffff" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round">
+      <line x1="7" y1="25" x2="17" y2="25"/>
+      <line x1="5" y1="33" x2="15" y2="33"/>
+      <line x1="7" y1="41" x2="17" y2="41"/>
+    </g>
+    <path d="M39 44 V23 M30 32 L39 22 L48 32" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="100" y="126" text-anchor="middle" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="22" font-weight="700" fill="#0f172a">
+    <tspan fill="#2563eb">Fast</tspan><tspan>Data</tspan><tspan fill="#10b981">Upload</tspan>
+  </text>
+  <text x="100" y="148" text-anchor="middle" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="9" font-weight="600" letter-spacing="2.6" fill="#94a3b8">SCAN · UPLOAD · DONE</text>
+</svg>
