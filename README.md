@@ -31,13 +31,22 @@ in ein Docker-Volume hoch.
 
 ## Tech-Stack
 
-| Bereich   | Technologie                                     |
-| --------- | ----------------------------------------------- |
-| Backend   | Node.js, Express, TypeScript, Multer            |
-| Frontend  | React 18, TypeScript, Vite, TailwindCSS          |
-| QR-Code   | `qrcode.react`                                   |
-| Webserver | Nginx (SPA + API-Reverse-Proxy im Web-Container) |
-| Container | Docker, Docker Compose                           |
+| Bereich   | Technologie                                                    |
+| --------- | -------------------------------------------------------------- |
+| Runtime   | Node.js 26 (`node:26-alpine`, Active LTS ab 28.10.2026)         |
+| Backend   | Express 5, TypeScript 7, Multer 2, Helmet 8                     |
+| Frontend  | React 19, React Router 7, TypeScript 7, Vite 8, TailwindCSS 4   |
+| QR-Code   | `qrcode.react` 4                                                |
+| Webserver | Nginx 1.31 (SPA + API-Reverse-Proxy im Web-Container)           |
+| Container | Docker, Docker Compose                                          |
+
+> **Versionsstand:** Alle Abhängigkeiten sind auf dem jeweils neuesten stabilen
+> Stand (siehe `backend/package.json` / `frontend/package.json`).
+> **Wichtig beim Major-Sprung auf TailwindCSS 4:** Das Theme steht nicht mehr in
+> `tailwind.config.js`, sondern in `frontend/src/index.css` (`@theme`) und wird
+> über das `@tailwindcss/vite`-Plugin in den Build eingebunden.
+> **Lokal wird Node.js ≥ 24 benötigt** (`node --version`); in den Containern läuft
+> Node 26.
 
 ## Verzeichnisstruktur
 
@@ -80,6 +89,8 @@ docker compose up -d --build
 Die hochgeladenen Dateien liegen anschließend auf dem Host in `./uploads`.
 
 ## Lokale Entwicklung
+
+Voraussetzung: **Node.js ≥ 24** (getestet mit Node 24 und in den Containern mit Node 26).
 
 Zwei Terminals:
 

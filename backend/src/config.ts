@@ -1,7 +1,9 @@
 import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// dotenv v17+ logs an "injected env" banner on every start. The quiet flag
+// keeps the container output limited to the FastDataUpload messages.
+dotenv.config({ quiet: true });
 
 /** Parse an integer environment variable with a fallback default. */
 function intFromEnv(name: string, fallback: number): number {

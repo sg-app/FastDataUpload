@@ -1,6 +1,54 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* =============================================================================
+ * Tailwind CSS v4 entry point.
+ * -----------------------------------------------------------------------------
+ * v4 is configured in CSS (no tailwind.config.js / postcss.config.js anymore)
+ * and is wired into the build through the @tailwindcss/vite plugin.
+ *
+ * Automatic source detection is disabled explicitly (source(none)) and the
+ * sources are declared below: this keeps class detection identical in the
+ * local dev tree and inside the Docker build (where no git root exists) and
+ * prevents node_modules from being scanned.
+ * ========================================================================== */
+@import 'tailwindcss' source(none);
+
+@source '../index.html';
+@source './**/*.{ts,tsx}';
+
+@theme {
+  /* Brand palette (blue) - replaces theme.extend.colors.brand */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+
+  /* Accent palette (green) - replaces theme.extend.colors.accent */
+  --color-accent-400: #34d399;
+  --color-accent-500: #10b981;
+  --color-accent-600: #059669;
+
+  /* Font stack - replaces theme.extend.fontFamily.sans */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Keyframes & animation - replaces theme.extend.keyframes + animation */
+  --animate-fade-in: fade-in 0.3s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
 
 :root {
   color-scheme: light dark;
@@ -12,14 +60,16 @@ body,
   height: 100%;
 }
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
-  margin: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   body {
-    @apply bg-slate-950 text-slate-100;
+    @apply bg-slate-50 text-slate-900 antialiased;
+    margin: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      @apply bg-slate-950 text-slate-100;
+    }
   }
 }

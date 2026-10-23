@@ -1,5 +1,6 @@
 # ---------- Build stage ----------
-FROM node:20-alpine AS build
+# Node 26 is the current stable major line and becomes Active LTS on 2026-10-28.
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ---------- Runtime stage ----------
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 WORKDIR /app
 

@@ -1,12 +1,15 @@
 # ---------- Build stage ----------
-FROM node:20-alpine AS build
+# Node 26 is the current stable major line and becomes Active LTS on 2026-10-28.
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm install
 
-COPY tsconfig.json tsconfig.node.json vite.config.ts tailwind.config.js postcss.config.js index.html ./
+# Tailwind CSS v4 needs no tailwind.config.js / postcss.config.js anymore -
+# the theme lives in src/index.css and runs through the @tailwindcss/vite plugin.
+COPY tsconfig.json tsconfig.node.json vite.config.ts index.html ./
 COPY src ./src
 COPY public ./public
 
@@ -19,7 +22,7 @@ ENV VITE_APP_NAME=$VITE_APP_NAME
 RUN npm run build
 
 # ---------- Runtime stage ----------
-FROM nginx:1.25-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # Remove the default site and install our own configuration
 RUN rm /etc/nginx/conf.d/default.conf
