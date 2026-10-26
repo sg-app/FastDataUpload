@@ -20,6 +20,29 @@ function intFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+/**
+ * Parse a boolean environment variable. Accepted truthy values are 1/true/yes/on,
+ * falsy values are 0/false/no/off (case insensitive).
+ */
+function boolFromEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') {
+    return fallback;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  // eslint-disable-next-line no-console
+  console.warn(`[config] Invalid value for ${name}="${raw}", using default ${fallback}.`);
+  return fallback;
+}
+
 /** Parse a comma separated list environment variable into an array. */
 function listFromEnv(name: string): string[] {
   const raw = process.env[name];
@@ -71,6 +94,20 @@ export const config = {
 
   /** Display name of the application (runtime configuration for the frontend). */
   appName: (process.env.APP_NAME ?? '').trim() || 'FastDataUpload',
+
+  /**
+   * True when the app is reached over https (e.g. behind Nginx Proxy Manager
+   * with a Let's Encrypt certificate). Only then are the headers that require a
+   * secure context delivered: Strict-Transport-Security, Cross-Origin-Opener-
+   * Policy, Origin-Agent-Cluster and the CSP directive
+   * "upgrade-insecure-requests".
+   *
+   * On a plain http deployment (http://<host>:<port>, e.g. http://dockersrv:8083)
+   * browsers ignore HSTS/COOP/Origin-Agent-Cluster - and
+   * "upgrade-insecure-requests" would even rewrite every asset request to
+   * https and fail with net::ERR_SSL_PROTOCOL_ERROR.
+   */
+  httpsEnabled: boolFromEnv('HTTPS_ENABLED', false),
 
   /** Allowed CORS origins. Empty array means "reflect request origin". */
   corsOrigins: listFromEnv('CORS_ORIGIN'),

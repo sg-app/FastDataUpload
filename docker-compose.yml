@@ -35,6 +35,9 @@ services:
       MAX_FILES_PER_REQUEST: ${MAX_FILES_PER_REQUEST:-20}
       UPLOAD_DIR: /app/uploads
       CORS_ORIGIN: ${CORS_ORIGIN:-}
+      # true = die App wird über https erreicht (Secure-Context-Header werden
+      # ausgeliefert). Bei reinem http-Zugriff false lassen!
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
     volumes:
       # Persistent volume mount for uploaded files
       - ./uploads:/app/uploads

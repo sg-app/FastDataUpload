@@ -19,8 +19,21 @@ app.disable('x-powered-by');
 // Security headers shipped with every response. The CSP is spelled out
 // explicitly because the single image serves the SPA from the same origin as
 // the API: inline style attributes (progress bar) need 'unsafe-inline' for
-// styles, 'data:'/'blob:' are required for images. "upgrade-insecure-requests"
-// is intentionally omitted so the app also works on plain http://localhost.
+// styles, 'data:'/'blob:' are required for images.
+//
+// Important: helmet merges its default directives into the list below
+// (useDefaults = true), so "upgrade-insecure-requests" is part of the default
+// set and has to be removed explicitly (null). Otherwise the browser rewrites
+// every asset request of an http page to https - e.g. the page is loaded from
+// http://dockersrv:8083 but the assets are requested from
+// https://dockersrv:8083/assets/... which fails with
+// net::ERR_SSL_PROTOCOL_ERROR because that port speaks plain http only.
+//
+// The same reasoning applies to the headers that are only meaningful inside a
+// secure context: Chrome ignores HSTS, Cross-Origin-Opener-Policy and
+// Origin-Agent-Cluster on a non trustworthy origin ("http://<lan-host>:<port>")
+// and logs console warnings. They are therefore only sent when the app is
+// really reached over https (HTTPS_ENABLED=true).
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -35,8 +48,17 @@ app.use(
         objectSrc: ["'none'"],
         formAction: ["'self'"],
         frameAncestors: ["'self'"],
+        // null removes the directive, [] would send the empty directive again.
+        upgradeInsecureRequests: config.httpsEnabled ? [] : null,
       },
     },
+    // Secure-context only headers. Setting them to false removes them entirely,
+    // which keeps the browser console clean on plain http deployments.
+    strictTransportSecurity: config.httpsEnabled
+      ? { maxAge: 15552000, includeSubDomains: true }
+      : false,
+    crossOriginOpenerPolicy: config.httpsEnabled ? { policy: 'same-origin' } : false,
+    originAgentCluster: config.httpsEnabled,
   }),
 );
 app.use(createCorsMiddleware());
@@ -106,6 +128,12 @@ const server = app.listen(config.port, () => {
   // eslint-disable-next-line no-console
   console.log(
     `[FastDataUpload] public app url: ${config.publicAppUrl || '(browser origin)'}`,
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    config.httpsEnabled
+      ? '[FastDataUpload] secure context mode: HSTS, COOP, Origin-Agent-Cluster and CSP upgrade-insecure-requests are sent'
+      : '[FastDataUpload] plain http mode: HTTPS-only headers are omitted (set HTTPS_ENABLED=true when serving over https)',
   );
   // eslint-disable-next-line no-console
   console.log(`[FastDataUpload] token expiry: ${config.tokenExpiryMinutes} min`);

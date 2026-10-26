@@ -218,7 +218,8 @@ Alle Werte sind in der `.env` (Kopie von `.env.example`) einstellbar.
 | `MAX_FILES_PER_REQUEST` | `20`           | Max. Anzahl Dateien pro Upload-Request                                      |
 | `UPLOAD_DIR`            | `/app/uploads` | Zielverzeichnis im Container (per Volume Mount auf `./uploads` gelegt)      |
 | `SPA_DIR`               | `/app/public`  | Verzeichnis der gebauten SPA. Fehlt es, läuft der Server im API-only-Modus  |
-| `CORS_ORIGIN`           | leer           | Kommagetrennte Liste erlaubter Origins. Leer = Request-Origin spiegeln       |
+| `CORS_ORIGIN`           | leer           | Kommagetrennte Liste erlaubter Origins. Leer = Request-Origin spiegeln (nur für Cross-Origin-Aufrufe nötig, siehe unten) |
+| `HTTPS_ENABLED`         | `false`        | `true`, wenn die App über **https** erreicht wird: liefert HSTS, COOP, Origin-Agent-Cluster und die CSP-Direktive `upgrade-insecure-requests`. Bei reinem http-Zugriff (z. B. `http://dockersrv:8083`) **`false` lassen** |
 | `PORT`                  | `3001`         | Interner Port des Express-Servers (im Image fest gesetzt)                   |
 
 ### Frontend-Runtime-Konfiguration (Container-Umgebung)
@@ -367,6 +368,90 @@ PNGs neu erzeugen: `powershell -File scripts/generate-logos.ps1`
   (für 10-Minuten-Sessions gewünscht). Bereits hochgeladene Dateien bleiben erhalten.
 - **Kein Login:** Wer den Token kennt, darf innerhalb der Gültigkeit hochladen -
   beabsichtigt, da die Freigabe per physischer Nähe (QR-Code) erfolgt.
+
+## Fehlerbehebung
+
+### `net::ERR_SSL_PROTOCOL_ERROR` für `/assets/...`, `favicon.svg` usw.
+
+Symptom (Browser-Konsole bei Aufruf von `http://dockersrv:8083`):
+
+```
+(index):11 GET https://dockersrv:8083/assets/index-*.css net::ERR_SSL_PROTOCOL_ERROR
+(index):10 GET https://dockersrv:8083/assets/index-*.js  net::ERR_SSL_PROTOCOL_ERROR
+:8083/favicon.svg:1 GET https://dockersrv:8083/favicon.svg net::ERR_SSL_PROTOCOL_ERROR
+```
+
+Ursache: **kein CORS-Problem**, sondern die CSP-Direktive
+`upgrade-insecure-requests`. Sie gehört zu den Helmet-Standard-Directives und
+wird – solange sie nicht explizit entfernt wird – mit ausgeliefert. Der Browser
+lädt die Seite über http und schreibt anschließend **jede** Subressource auf
+`https://<host>:<port>/assets/...` um. Der Port `8083` spricht aber nur http,
+also bricht die Verbindung mit `ERR_SSL_PROTOCOL_ERROR` ab.
+
+Prüfen (auf dem Server, der die Seite ausliefert):
+
+```bash
+curl -sI http://dockersrv:8083/ | findstr /i "content-security-policy"
+# Falsch: ...upgrade-insecure-requests...
+# Richtig: CSP vorhanden, aber ohne upgrade-insecure-requests
+```
+
+Lösung: `HTTPS_ENABLED=false` (Default) setzen, damit `backend/src/server.ts`
+die Direktive explizit entfernt (`upgradeInsecureRequests: null`). Wird die App
+später hinter Nginx Proxy Manager über https betrieben, `HTTPS_ENABLED=true`
+setzen – dann werden `upgrade-insecure-requests`, HSTS, COOP und
+Origin-Agent-Cluster wieder ausgeliefert.
+
+### COOP / Origin-Agent-Cluster Warnungen
+
+```
+The Cross-Origin-Opener-Policy header has been ignored, because the URL's origin was untrustworthy.
+The page requested an origin-keyed agent cluster using the Origin-Agent-Cluster header, but could not be origin-keyed...
+```
+
+Beide Header wirken nur in einem **Secure Context** (https oder `localhost`).
+Bei http auf einem Hostnamen wie `dockersrv` ignoriert Chrome sie und schreibt
+genau diese Warnungen ins Log. Sie sind rein kosmetisch, verschwinden aber mit
+`HTTPS_ENABLED=false` (Header werden dann gar nicht gesendet) bzw. durch echten
+https-Betrieb.
+
+> **Noch ein Hinweis:** Bei „Force SSL“ in Nginx Proxy Manager wird die Origin
+> `dockersrv` per HSTS im Browser gespeichert. HSTS gilt **host-, nicht
+> portweise** – danach würde `http://dockersrv:8083` vom Browser auf https
+> umgeschrieben. Prüfen/löschen:
+> `chrome://net-internals/#hsts` → *Delete domain security policies* → `dockersrv`.
+
+### Muss für CORS etwas konfiguriert werden?
+
+Für diese App grundsätzlich **nein**: API (`/api/*`) und SPA werden von
+derselben Origin ausgeliefert – egal ob über `http://dockersrv:8083`,
+`http://localhost:8080` oder `https://upload.example.com`. Damit greift für
+`fetch`/`XMLHttpRequest` gar kein CORS, und `CORS_ORIGIN` kann leer bleiben.
+
+`CORS_ORIGIN` ist nur nötig, wenn die SPA von einer **anderen** Origin aus
+aufgerufen wird, z. B.:
+
+- lokale Entwicklung: Vite-Dev-Server `http://localhost:3000` → API auf `3001`
+  (dann automatisch erlaubt, siehe unten)
+- getrenntes Hosting von Frontend und Backend
+
+Konfiguration (`backend/src/middleware/cors.middleware.ts`):
+
+| Punkt                | Wert                                        | Anmerkung                                                   |
+| -------------------- | ------------------------------------------- | ----------------------------------------------------------- |
+| `origin`             | `CORS_ORIGIN` (kommagetrennt)               | leer = Request-Origin spiegeln; für Betrieb explizit setzen |
+| `methods`            | `GET, POST, DELETE, OPTIONS`                | deckt alle Endpunkte ab (`GET /api/config`, `POST /api/upload`, `DELETE /api/token/:token`) |
+| `allowedHeaders`     | `Content-Type, Authorization`               | `Content-Type` wird für multipart-Uploads benötigt          |
+| `maxAge`             | `600`                                       | Preflight-Cache in Sekunden                                 |
+| Credentials/Cookies  | nicht aktiviert                             | Die App verwendet keine Cookies – `credentials: true` wäre unnötig |
+
+Beispiel für eine explizite Konfiguration:
+
+```dotenv
+CORS_ORIGIN=https://upload.example.com
+```
+
+Mehrere Origins kommagetrennt: `CORS_ORIGIN=https://upload.example.com,http://dockersrv:8083`.
 
 ## Lizenz
 
