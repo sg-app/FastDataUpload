@@ -48,3 +48,15 @@ export interface ApiError {
   message: string;
   statusCode: number;
 }
+
+/**
+ * Runtime configuration handed to the frontend via GET /api/config.
+ * The values come from the container environment, so they can be changed
+ * without rebuilding the image.
+ */
+export interface RuntimeConfigResponse {
+  /** Display name shown in the UI. */
+  appName: string;
+  /** Public base URL used for the QR code link. Empty = browser origin. */
+  appUrl: string;
+}

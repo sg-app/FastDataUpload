@@ -34,3 +34,10 @@ export interface ApiErrorBody {
   message: string;
   statusCode: number;
 }
+
+/** Runtime configuration fetched from GET /api/config (container environment). */
+export interface RuntimeConfig {
+  appName: string;
+  /** Public base URL used for the QR code link. Empty = browser origin. */
+  appUrl: string;
+}

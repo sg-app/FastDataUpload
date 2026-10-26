@@ -1,45 +1,53 @@
+# =============================================================================
+# FastDataUpload - Docker Compose (empfohlen: ein Image, ein Container)
+# -----------------------------------------------------------------------------
+# Das Image enthält Backend-API und Frontend (siehe ./Dockerfile).
+#
+#   docker compose up -d --build      # Image aus dem Quellcode bauen
+#   docker compose pull               # veröffentlichtes Image von GHCR holen
+#   docker compose up -d              # starten
+#
+# Die hochgeladenen Dateien landen im Bind-Mount ./uploads auf dem Host.
+# Zwei getrennte Container (Backend + Nginx)? -> docker-compose.split.yml
+# =============================================================================
 services:
-  backend:
+  app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    image: fastdataupload-backend:latest
-    container_name: fastdataupload-backend
+      args:
+        # Build-time variables baked into the static bundle (nur beim Bauen nötig)
+        VITE_APP_URL: ${VITE_APP_URL:-}
+        VITE_APP_NAME: ${VITE_APP_NAME:-FastDataUpload}
+    # Veröffentlichtes Image (CI/CD). Für einen lokalen Build kann der Wert
+    # z. B. auf "fastdataupload:latest" gesetzt werden (siehe .env.example).
+    image: ${IMAGE:-ghcr.io/sg-app/fastdataupload:latest}
+    container_name: fastdataupload
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: ${PORT:-3001}
+      # Laufzeit-Konfiguration für das Frontend (kein Rebuild nötig)
+      APP_URL: ${APP_URL:-}
+      APP_NAME: ${APP_NAME:-FastDataUpload}
+      # Der Server lauscht im Container immer auf 3001 (siehe Dockerfile).
       TOKEN_EXPIRY_MINUTES: ${TOKEN_EXPIRY_MINUTES:-10}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       MAX_FILES_PER_REQUEST: ${MAX_FILES_PER_REQUEST:-20}
-      UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
+      UPLOAD_DIR: /app/uploads
       CORS_ORIGIN: ${CORS_ORIGIN:-}
     volumes:
       # Persistent volume mount for uploaded files
       - ./uploads:/app/uploads
-    expose:
-      - "${PORT:-3001}"
-    networks:
-      - fastdataupload
-
-  web:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        # Build-time variables baked into the static bundle
-        VITE_APP_URL: ${VITE_APP_URL:-}
-        VITE_APP_NAME: ${VITE_APP_NAME:-FastDataUpload}
-    image: fastdataupload-web:latest
-    container_name: fastdataupload-web
-    restart: unless-stopped
-    depends_on:
-      - backend
     ports:
-      - "${WEB_PORT:-8080}:80"
-    networks:
-      - fastdataupload
-
-networks:
-  fastdataupload:
-    driver: bridge
+      # Nginx Proxy Manager leitet auf diesen Port weiter.
+      - "${WEB_PORT:-8080}:3001"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

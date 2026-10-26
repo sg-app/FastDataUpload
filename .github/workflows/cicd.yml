@@ -1,0 +1,309 @@
+name: CI / CD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Cancel previous PR/branch runs when a new commit is pushed
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  # Image published to GitHub Container Registry (repository name, lowercased by GHCR)
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+
+  gitversion:
+    name: GitVersion
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      semVer: ${{ steps.gitversion.outputs.semVer }}
+      fullSemVer: ${{ steps.gitversion.outputs.fullSemVer }}
+      majorMinorPatch: ${{ steps.gitversion.outputs.majorMinorPatch }}
+      major: ${{ steps.gitversion.outputs.major }}
+      minor: ${{ steps.gitversion.outputs.minor }}
+      patch: ${{ steps.gitversion.outputs.patch }}
+      preReleaseTag: ${{ steps.gitversion.outputs.preReleaseTag }}
+      isPreRelease: ${{ steps.gitversion.outputs.preReleaseTag != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download shared GitVersion config
+        run: |
+          curl -sSfL -H "Authorization: Bearer ${{ secrets.SHAREDREPOTOKEN }}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            -o GitVersion.yml \
+            "https://api.github.com/repos/sg-app/Shared/contents/GitVersion.yml?ref=main"
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+        with:
+          versionSpec: '6.8.x'
+
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+
+      - name: Output Version
+        run: |
+          echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
+          echo "FullSemVer: ${{ steps.gitversion.outputs.fullSemVer }}"
+          echo "MajorMinorPatch: ${{ steps.gitversion.outputs.majorMinorPatch }}"
+          echo "Major: ${{ steps.gitversion.outputs.major }}"
+          echo "Minor: ${{ steps.gitversion.outputs.minor }}"
+          echo "Patch: ${{ steps.gitversion.outputs.patch }}"
+          echo "PreReleaseTag: ${{ steps.gitversion.outputs.preReleaseTag }}"
+
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build backend (TypeScript)
+        working-directory: backend
+        run: npm run build
+
+      - name: Build frontend (TypeScript + Vite)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Smoke test API + SPA
+        working-directory: backend
+        env:
+          PORT: 3001
+          APP_URL: https://upload.example.com
+          APP_NAME: FastDataUpload
+          UPLOAD_DIR: ${{ runner.temp }}/fdu-smoke-uploads
+          SPA_DIR: ${{ github.workspace }}/frontend/dist
+        run: |
+          node dist/server.js > /tmp/backend.log 2>&1 &
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+
+          echo "== health =="
+          curl -fsS http://127.0.0.1:3001/api/health | jq -e '.status == "ok"'
+
+          echo "== SPA shell and deep link =="
+          curl -fsS http://127.0.0.1:3001/ | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/upload/smoke)" = "200"
+
+          echo "== token + upload round trip =="
+          TOKEN=$(curl -fsS -X POST http://127.0.0.1:3001/api/token | jq -r '.token')
+          test -n "$TOKEN"
+          echo "hello fastdataupload" > /tmp/smoke.txt
+          curl -fsS -X POST "http://127.0.0.1:3001/api/upload/$TOKEN" -F "files=@/tmp/smoke.txt" | jq -e '.uploaded == 1'
+
+          echo "== invalid token is rejected =="
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3001/api/upload/not-a-token -F "files=@/tmp/smoke.txt")" = "403"
+
+          echo "== runtime config (from environment) =="
+          curl -fsS http://127.0.0.1:3001/api/config | jq -e '.appUrl == "https://upload.example.com"'
+          curl -fsS http://127.0.0.1:3001/api/config | jq -e '.appName == "FastDataUpload"'
+
+          echo "== stored file =="
+          ls -A "$UPLOAD_DIR" | grep -q .
+
+          echo "--- backend log ---"
+          cat /tmp/backend.log
+
+  docker:
+    name: Build and Push Docker Image
+    needs: [gitversion, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      tags: ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Determine Docker Tags
+        id: determine-tags
+        run: |
+          SEMVER="${{ needs.gitversion.outputs.semVer }}"
+          MAJOR_MINOR_PATCH="${{ needs.gitversion.outputs.majorMinorPatch }}"
+          MAJOR="${{ needs.gitversion.outputs.major }}"
+          MINOR="${{ needs.gitversion.outputs.minor }}"
+          {
+            echo "tags<<EOF"
+            if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+              # Develop: pre, develop und vollständige Pre-Release-Version
+              echo "type=raw,value=pre"
+              echo "type=raw,value=develop"
+              echo "type=raw,value=$SEMVER"
+            elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              # Main: latest und vollständige SemVer-Tags
+              echo "type=raw,value=latest"
+              echo "type=raw,value=$MAJOR"
+              echo "type=raw,value=$MAJOR.$MINOR"
+              echo "type=raw,value=$MAJOR_MINOR_PATCH"
+            else
+              # Feature-Branches: nur Branch-Name als Tag (wird nicht gepusht)
+              echo "type=raw,value=${{ github.ref_name }}"
+            fi
+            echo "EOF"
+          } >> $GITHUB_ENV
+          echo "Version: $SEMVER"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            ${{ env.IMAGE_NAME }}
+          tags: ${{ env.tags }}
+
+      - name: Login to GitHub Container Registry
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: fastdataupload:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.gitversion.outputs.semVer }}
+            VITE_APP_URL=${{ vars.VITE_APP_URL }}
+            VITE_APP_NAME=${{ vars.VITE_APP_NAME || 'FastDataUpload' }}
+
+      - name: Smoke test the image
+        run: |
+          docker run -d --name fdu-smoke -p 3001:3001 \
+            -e APP_URL=https://upload.example.com \
+            -e APP_NAME=FastDataUpload \
+            fastdataupload:smoke
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+
+          echo "== health =="
+          curl -fsS http://127.0.0.1:3001/api/health | jq -e '.status == "ok"'
+
+          echo "== SPA shell and deep link =="
+          curl -fsS http://127.0.0.1:3001/ | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/upload/smoke)" = "200"
+
+          echo "== token + upload round trip =="
+          TOKEN=$(curl -fsS -X POST http://127.0.0.1:3001/api/token | jq -r '.token')
+          echo "hello fastdataupload" > /tmp/smoke.txt
+          curl -fsS -X POST "http://127.0.0.1:3001/api/upload/$TOKEN" -F "files=@/tmp/smoke.txt" | jq -e '.uploaded == 1'
+
+          echo "== runtime config (from container environment) =="
+          curl -fsS http://127.0.0.1:3001/api/config | jq -e '.appUrl == "https://upload.example.com"'
+
+          echo "== file stored inside the container =="
+          docker exec fdu-smoke sh -c 'ls -A /app/uploads | grep -q .'
+
+          echo "--- container log ---"
+          docker logs fdu-smoke
+
+      - name: Remove smoke test container
+        if: always()
+        run: docker rm -f fdu-smoke || true
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          platforms: linux/amd64
+          context: .
+          file: ./Dockerfile
+          push: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')  && github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+          sbom: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')  && github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+          provenance: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')  && github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.gitversion.outputs.semVer }}
+            VITE_APP_URL=${{ vars.VITE_APP_URL }}
+            VITE_APP_NAME=${{ vars.VITE_APP_NAME || 'FastDataUpload' }}
+
+  release:
+    name: Create Release
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
+    needs: [gitversion, test, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      SEMVER: ${{ needs.gitversion.outputs.semVer }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download shared git-cliff config
+        run: |
+          curl -sSfL -H "Authorization: Bearer ${{ secrets.SHAREDREPOTOKEN }}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            -o cliff.toml \
+            "https://api.github.com/repos/sg-app/Shared/contents/cliff.toml?ref=main" \
+          || echo "::warning::Zentrale cliff.toml nicht erreichbar - git-cliff verwendet seine Standardkonfiguration."
+
+      - name: Generate Changelog
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.2.0
+        with:
+          tag_name: ${{ env.SEMVER }}
+          name: Release ${{ env.SEMVER }}
+          body_path: CHANGELOG.md
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+

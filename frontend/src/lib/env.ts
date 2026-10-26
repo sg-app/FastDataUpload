@@ -1,5 +1,46 @@
+import { fetchRuntimeConfig } from './api';
+import type { RuntimeConfig } from '../types';
+
+/**
+ * Runtime configuration (app name, public base URL).
+ *
+ * The values are loaded at runtime from the backend (GET /api/config) and come
+ * from the container environment, e.g.
+ *
+ *   docker run -e APP_URL=https://upload.example.com fastdataupload
+ *
+ * Precedence for every value:
+ *   1. runtime configuration from the container environment (APP_URL / APP_NAME)
+ *   2. build time value baked by Vite (VITE_APP_URL / VITE_APP_NAME) - optional
+ *   3. sensible default (browser origin / "FastDataUpload")
+ */
+let runtimeConfig: RuntimeConfig | null = null;
+
+/** Timeout for the runtime configuration request in milliseconds. */
+const CONFIG_TIMEOUT_MS = 5000;
+
+/**
+ * Load the runtime configuration. This never rejects: if the backend cannot be
+ * reached, the build time values (or the defaults) are used instead.
+ */
+export async function loadRuntimeConfig(): Promise<void> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
+
+  try {
+    runtimeConfig = await fetchRuntimeConfig(controller.signal);
+  } catch {
+    runtimeConfig = null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 /** Application name shown in the UI. */
-export const APP_NAME: string = import.meta.env.VITE_APP_NAME || 'FastDataUpload';
+export function getAppName(): string {
+  const configured = runtimeConfig?.appName || import.meta.env.VITE_APP_NAME;
+  return configured && configured.trim() !== '' ? configured : 'FastDataUpload';
+}
 
 /**
  * Public base URL used to build the upload link that is encoded into the
@@ -7,7 +48,7 @@ export const APP_NAME: string = import.meta.env.VITE_APP_NAME || 'FastDataUpload
  * correct when the app is served behind Nginx Proxy Manager on its own domain.
  */
 export function getPublicBaseUrl(): string {
-  const configured = import.meta.env.VITE_APP_URL;
+  const configured = runtimeConfig?.appUrl || import.meta.env.VITE_APP_URL;
   if (configured && configured.trim() !== '') {
     return configured.replace(/\/+$/, '');
   }

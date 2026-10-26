@@ -1,5 +1,6 @@
 import type {
   ApiErrorBody,
+  RuntimeConfig,
   TokenResponse,
   TokenValidationResponse,
   UploadResponse,
@@ -43,6 +44,19 @@ async function parse<T>(res: Response): Promise<T> {
   }
 
   return data as T;
+}
+
+/**
+ * Fetch the runtime configuration provided by the backend. The values come
+ * from the container environment (APP_URL / APP_NAME), so changing the public
+ * URL does not require a rebuild of the frontend bundle.
+ */
+export async function fetchRuntimeConfig(signal?: AbortSignal): Promise<RuntimeConfig> {
+  const res = await fetch(`${API_BASE}/config`, {
+    headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+    signal,
+  });
+  return parse<RuntimeConfig>(res);
 }
 
 /** Generate a new upload token. */

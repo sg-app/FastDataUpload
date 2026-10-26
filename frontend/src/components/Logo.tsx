@@ -1,4 +1,4 @@
-import { APP_NAME } from '../lib/env';
+import { getAppName } from '../lib/env';
 
 interface LogoProps {
   /** Size of the square mark in pixels. */
@@ -13,6 +13,9 @@ interface LogoProps {
  * with motion lines, optionally followed by the wordmark.
  */
 export function Logo({ size = 44, showWordmark = true, className = '' }: LogoProps) {
+  // Name is part of the runtime configuration (APP_NAME).
+  const APP_NAME = getAppName();
+
   return (
     <div className={`flex items-center gap-3 ${className}`}>
       <svg

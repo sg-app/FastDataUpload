@@ -1,0 +1,24 @@
+# Keep the build context small - dependencies and build output are created
+# inside the image, uploads must never end up in a layer.
+**/node_modules
+**/dist
+**/build
+.git
+.github
+.vscode
+.idea
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+uploads/
+**/uploads/
+
+# Logs and tooling
+*.log
+README.md
+docker-compose*.yml
+scripts/

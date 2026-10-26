@@ -53,6 +53,25 @@ export const config = {
     ? process.env.UPLOAD_DIR
     : path.join(process.cwd(), 'uploads'),
 
+  /**
+   * Directory containing the built frontend (single image deployments).
+   * If it does not exist the server runs in API only mode, which is the case
+   * during local development and inside the backend-only container.
+   */
+  spaDir: process.env.SPA_DIR && process.env.SPA_DIR.trim() !== ''
+    ? process.env.SPA_DIR
+    : path.join(process.cwd(), 'public'),
+
+  /**
+   * Public base URL of the application (runtime configuration for the
+   * frontend). This is the URL that ends up inside the QR code. An empty value
+   * makes the frontend fall back to the browser origin.
+   */
+  publicAppUrl: (process.env.APP_URL ?? '').trim().replace(/\/+$/, ''),
+
+  /** Display name of the application (runtime configuration for the frontend). */
+  appName: (process.env.APP_NAME ?? '').trim() || 'FastDataUpload',
+
   /** Allowed CORS origins. Empty array means "reflect request origin". */
   corsOrigins: listFromEnv('CORS_ORIGIN'),
 } as const;

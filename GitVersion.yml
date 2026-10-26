@@ -1,0 +1,45 @@
+# =============================================================================
+# GitVersion - Fallback-Konfiguration für FastDataUpload
+# -----------------------------------------------------------------------------
+# Der CI-Workflow lädt bevorzugt die zentrale Konfiguration aus dem Repository
+# sg-app/Shared (Secret: SHAREDREPOTOKEN). Ist diese nicht erreichbar, wird
+# diese Datei verwendet, damit Versionierung und Releases trotzdem laufen.
+# Inhalt bewusst identisch zum zentralen GitVersion.yml.
+# =============================================================================
+mode: ContinuousDelivery
+continuous-delivery-fallback-tag: ""
+next-version: 0.1.0
+tag-prefix: "[vV]?"
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+assembly-informational-format: "{NuGetVersionV2}+Sha.{Sha}"
+branches:
+  main:
+    mode: ContinuousDelivery
+    tag: ""
+    increment: Patch
+    is-main-branch: true
+    prevent-increment-of-merged-branch-version: true
+  develop:
+    mode: ContinuousDelivery
+    tag: develop
+    increment: Minor
+    is-main-branch: false
+  release:
+    mode: ContinuousDelivery
+    tag: ""
+    increment: None
+    regex: ^releases?[/-]
+  feature:
+    mode: ContinuousDelivery
+    tag: "{BranchName}"
+    increment: Inherit
+    regex: ^features?[/-]
+  pull-request:
+    mode: ContinuousDelivery
+    tag: PullRequest
+    increment: Inherit
+    regex: ^(pull|pull\-requests|pr)[/-]
+ignore:
+  sha: []
+merge-message-formats: {}
